@@ -1,0 +1,10 @@
+langchain
+langchain-groq
+langchain-google-genai
+langchain-experimental
+pandas
+matplotlib
+openpyxl
+tabulate
+python-dotenv
+streamlit

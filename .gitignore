@@ -1,0 +1,28 @@
+# --- Segurança (CRÍTICO) ---
+.env
+.env.local
+.env.*
+
+# --- Ambientes Virtuais ---
+.venv/
+venv/
+env/
+
+# --- Python (Bytecode e Cache) ---
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# --- Arquivos Gerados pelo Agente ---
+# Ignora os gráficos gerados, pois eles mudam a cada execução
+outputs/
+*.log
+
+# --- IDEs e Editores ---
+.vscode/
+.idea/
+
+# --- Sistema Operacional ---
+.DS_Store
+Thumbs.db
