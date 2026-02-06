@@ -4,6 +4,40 @@ import glob
 from src.data_ingestion import DataIngestion
 from src.agent_core import DataAnalysisAgent
 
+
+# ... (início do arquivo igual)
+
+with st.sidebar:
+    st.header("🧠 Base de Conhecimento")
+    
+    data_folder = "data"
+    files = [f for f in os.listdir(data_folder) if f.endswith(('.csv', '.xlsx', '.xls'))]
+    
+    if files:
+        st.success(f"{len(files)} arquivos na pasta.")
+        with st.expander("Ver arquivos"):
+            for f in files:
+                st.code(f, language="text")
+    else:
+        st.warning("Pasta vazia.")
+
+    st.markdown("---")
+    
+    # --- NOVO BOTÃO DE REFRESH ---
+    if st.button("🔄 Recriar Índice Vetorial"):
+        if st.session_state.agent:
+            with st.spinner("Relendo arquivos e recriando vetores..."):
+                # Chama o método que criamos no DatasetManager
+                st.session_state.agent.dataset_manager.force_refresh()
+                st.success("Índice atualizado com sucesso!")
+                # Recarrega a página para garantir
+                st.rerun()
+
+    if st.button("🗑️ Limpar Chat"):
+        st.session_state.messages = []
+        st.rerun()
+
+# ... (resto do arquivo igual)
 # --- Configuração da Página ---
 st.set_page_config(
     page_title="Data Agent AI",

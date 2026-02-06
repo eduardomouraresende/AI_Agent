@@ -1,88 +1,71 @@
 import os
+import warnings
 import pandas as pd
 from dotenv import load_dotenv
-
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain.agents import AgentExecutor, create_react_agent
 from langchain_core.prompts import PromptTemplate
 
-from src.tools.custom_tools import get_current_datetime, get_pandas_tool
+# --- FILTROS DE AVISO ---
+warnings.filterwarnings("ignore")
+
+# --- IMPORTAÇÃO ROBUSTA DO AGENTE ---
+try:
+    from langchain.agents import AgentExecutor, create_react_agent
+except ImportError:
+    try:
+        from langchain.agents.agent import AgentExecutor
+        from langchain.agents.react.agent import create_react_agent
+    except ImportError:
+        from langchain.agents import AgentExecutor
+        from langchain.agents import create_react_agent
+
+from src.dataset_manager import DatasetManager
+from src.tools.custom_tools import get_analysis_tools
 
 load_dotenv()
 
 class DataAnalysisAgent:
-    def __init__(self, df: pd.DataFrame = None, system_role: str = None):
-        self.df = df
+    def __init__(self, system_role: str = None):
+        # 1. Inicializa Embeddings Locais (HuggingFace)
+        self.dataset_manager = DatasetManager()
         self.chat_history = [] 
         
-        # Configuração de Pastas
         self.output_dir = "outputs"
         if not os.path.exists(self.output_dir):
             os.makedirs(self.output_dir)
 
-        # Preparação das Tools
-        self.tools = [get_current_datetime]
-        
-        if self.df is not None:
-            pandas_tool = get_pandas_tool(self.df)
-            if pandas_tool:
-                self.tools.append(pandas_tool)
+        # 2. Carrega Tools
+        self.tools = get_analysis_tools(self.dataset_manager)
 
-        # Configuração do Gemini 2.0 Flash Lite
+        # 3. Configuração do Gemini
+        # REMOVEMOS O 'safety_settings' PARA EVITAR O ERRO DE VALIDAÇÃO.
+        # O modelo usará os filtros padrão (Default), o que permite o código rodar.
         self.llm = ChatGoogleGenerativeAI(
-            model="gemini-2.0-flash-lite-preview-02-05",
+            model="gemini-2.0-flash", 
             temperature=0,
-            google_api_key=os.getenv("GOOGLE_API_KEY"),
-            safety_settings={
-                "HARM_CATEGORY_DANGEROUS_CONTENT": "BLOCK_NONE",
-                "HARM_CATEGORY_HATE_SPEECH": "BLOCK_NONE",
-                "HARM_CATEGORY_HARASSMENT": "BLOCK_NONE",
-                "HARM_CATEGORY_SEXUALLY_EXPLICIT": "BLOCK_NONE",
-            }
+            google_api_key=os.getenv("GOOGLE_API_KEY")
         )
         
-        role = system_role if system_role else "um Cientista de Dados Sênior"
+        role = system_role if system_role else "um Agente Autônomo de Dados"
 
-        # PROMPT ATUALIZADO COM NUMPY
+        # 4. Prompt
         self.prompt = PromptTemplate.from_template(
             f"""
             Você é {role}.
             
-            SUAS FERRAMENTAS:
+            FERRAMENTAS:
             {{tools}}
             
-            ----------------------------------------------------------------
-            DIRETRIZES DE USO:
-            
-            1. ANÁLISE DE DADOS:
-               - Use a ferramenta `python_repl_ast`.
-               - O dataframe é `df`.
-               - O numpy está disponível como `np`.
-               - Para cálculos matemáticos complexos (estatística avançada, logaritmos, transformações), PREFIRA usar `np` em vez de loops Python.
-            
-            2. VISUALIZAÇÃO (GRÁFICOS):
-               - Salve sempre em: `{self.output_dir}/`
-               - Exemplo: `plt.savefig('{self.output_dir}/analise_numpy.png')`
-               - Use `plt.close()` ao final.
-            
-            3. GERAL:
-               - Se perguntarem datas, use `get_current_datetime`.
+            NOMES: {{tool_names}}
             
             ----------------------------------------------------------------
-            FORMATO DE PENSAMENTO (ReAct):
+            REGRAS:
+            1. DADOS: Se `df` for None, use `load_relevant_dataset`. Se tiver dados, use `python_repl_ast`.
+            2. CÓDIGO: Use `print()` para ver resultados.
+            3. GRÁFICOS: Salve em `{self.output_dir}/nome.png` e limpe com `plt.close()`.
             
-            Question: Pergunta do usuário
-            Thought: O que fazer?
-            Action: python_repl_ast
-            Action Input: print(df.describe())
-            Observation: ...
-            ...
-            Final Answer: Resposta final.
-            
-            Comece!
-            
-            Question: {{input}}
-            Thought:{{agent_scratchpad}}
+            ----------------------------------------------------------------
+            Thought: {{agent_scratchpad}}
             """
         )
 
@@ -99,18 +82,15 @@ class DataAnalysisAgent:
     def process_message(self, user_input: str):
         history_text = ""
         if self.chat_history:
-            history_text = "Histórico Recente:\n" + "\n".join([f"{r}: {c}" for r, c in self.chat_history[-2:]])
+            history_text = "Histórico:\n" + "\n".join([f"{r}: {c}" for r, c in self.chat_history[-2:]])
         
-        full_input = f"{history_text}\nNova Pergunta: {user_input}" if history_text else user_input
+        full_input = f"{history_text}\nUsuário: {user_input}" if history_text else user_input
 
         try:
             response = self.executor.invoke({"input": full_input})
-            output = response['output']
-            
-            self.chat_history.append(("Usuário", user_input))
-            self.chat_history.append(("Assistente", output))
-            
-            return output
-            
+            return response['output']
         except Exception as e:
-            return f"Erro no Agente: {str(e)}"
+            error_msg = str(e)
+            if "quota" in error_msg.lower():
+                return "⚠️ Cota excedida. Aguarde um instante."
+            return f"Erro: {error_msg}"
